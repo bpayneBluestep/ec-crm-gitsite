@@ -114,7 +114,6 @@ function sidebar(active: string, rail = false): string {
     <nav class="nav">
       ${NAV.map(n => `<a href="#/${n.key}" class="${active === n.key ? 'active' : ''}" title="${n.label}">${ic(n.icon, 18)}<span class="lbl">${n.label}</span></a>`).join('')}
     </nav>
-    ${rail ? '' : `<div class="tip"><b>Tip —</b> this is the primary navigation. Click any client row to open their record.</div>`}
   </aside>`;
 }
 

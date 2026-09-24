@@ -46,9 +46,6 @@
 .nav a:hover{background:var(--sidebar-accent)}
 .nav a.active{background:var(--sidebar-accent);color:var(--sidebar-accent-foreground);font-weight:600}
 .nav a .chev{margin-left:auto;color:var(--muted-foreground)}
-.tip{margin:auto 12px 14px;background:var(--accent);border-radius:8px;padding:12px 13px;
-  font-size:12px;line-height:1.45;color:var(--accent-foreground)}
-.tip b{font-weight:700}
 
 /* main content */
 .main{flex:1;min-width:0;overflow-y:auto;display:flex;flex-direction:column}
