@@ -107,7 +107,7 @@ async function submitNewClient(): Promise<void> {
   }
 }
 
-// Lightweight transient toast (bottom-right).
+// Lightweight transient toast (bottom-center; the bottom-right corner belongs to BlueIQ).
 function toast(msg: string): void {
   const t = document.createElement('div');
   t.className = 'toast';

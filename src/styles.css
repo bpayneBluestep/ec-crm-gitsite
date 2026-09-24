@@ -735,12 +735,16 @@ a.rf-client:hover{color:var(--primary);text-decoration:underline}
 .dash-empty{padding:22px 8px;text-align:center;font-size:13px;color:var(--muted-foreground)}
 .dash-pills{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
 
-/* toast */
-.toast{position:fixed;right:20px;bottom:20px;z-index:1100;display:flex;align-items:center;gap:9px;
+/* toast — bottom-CENTER, not bottom-right: the BlueIQ launcher pill and its
+   docked panel own the bottom-right corner (chatbot.css). z-index sits above
+   both so a confirmation can never be buried behind the assistant. */
+.toast{position:fixed;left:50%;bottom:max(20px,env(safe-area-inset-bottom,0px));z-index:2147483100;
+  display:flex;align-items:center;gap:9px;
   background:var(--foreground);color:var(--background);font-size:14px;font-weight:500;
   padding:11px 15px;border-radius:8px;box-shadow:var(--shadow-lg);
-  opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;max-width:380px}
-.toast.show{opacity:1;transform:translateY(0)}
+  opacity:0;transform:translate(-50%,8px);transition:opacity .2s,transform .2s;
+  max-width:min(380px,calc(100vw - 32px));width:max-content;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
 .toast svg{color:var(--success);flex:none}
 
 /* =====================================================================
