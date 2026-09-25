@@ -16,6 +16,22 @@ interface BiqMsg {
   role: 'user' | 'assistant';
   content: string;
   error?: boolean;
+  trace?: BiqTrace;   // super-only "Under the hood" payload from /b/blueiq (absent for everyone else)
+}
+
+// One tool call as recorded by the endpoint (Tool.invoke): what the model asked
+// for, exactly what was handed back to it, how long it took, whether it errored.
+interface BiqTraceCall { name: string; args: any; result: any; durationMs?: number; isError?: boolean; }
+// The per-turn trace. The endpoint only sends it to a server-verified global super.
+interface BiqTrace {
+  engine: string; engineFallback: boolean; baiError: string;
+  provider: string; model: string; iterations: number;
+  usage: { promptTokens: number; completionTokens: number; cachedPromptTokens: number };
+  elapsedMs: number;
+  systemPrompt: string;
+  history: { role: string; content: string }[];
+  question: string; scope: string; clientId: string; programId: string;
+  toolCalls: BiqTraceCall[];
 }
 
 let BIQ_OPEN = false;
@@ -130,13 +146,89 @@ function biqThreadHtml(ctx: { focus: 'client' | 'program' | 'none'; page: string
       const body = m.error
         ? '<div class="biq-bubble biq-err">' + ic('alert', 15) + '<span>' + esc(m.content) + '</span></div>'
         : '<div class="biq-bubble">' + biqMd(m.content) + '</div>';
-      html += '<div class="biq-msg biq-bot">' + body + '</div>';
+      const trace = (!m.error && m.trace && biqIsSuper()) ? biqTraceHtml(m.trace) : '';
+      html += '<div class="biq-msg biq-bot">' + body + trace + '</div>';
     }
   }
   if (BIQ_BUSY) {
     html += '<div class="biq-msg biq-bot"><div class="biq-bubble biq-thinking"><span></span><span></span><span></span></div></div>';
   }
   return html;
+}
+
+// ---- super-user "Under the hood" trace ----
+// Rendering hint only: the endpoint decides server-side whether to send a trace.
+function biqIsSuper(): boolean {
+  return typeof SESSION !== 'undefined' && !!SESSION && SESSION.isSuper === true;
+}
+
+function biqJson(v: any): string {
+  if (typeof v === 'string') return v;
+  try { return JSON.stringify(v, null, 2); } catch (_e) { return String(v); }
+}
+function biqSecs(ms: number): string {
+  const n = Number(ms) || 0;
+  return n < 1000 ? n + ' ms' : (n / 1000).toFixed(n < 10000 ? 2 : 1) + ' s';
+}
+function biqNum(n: any): string { return (Number(n) || 0).toLocaleString(); }
+function biqPre(text: string): string { return '<pre class="biq-tr-pre">' + esc(text) + '</pre>'; }
+
+function biqTraceHtml(t: BiqTrace): string {
+  const calls = Array.isArray(t.toolCalls) ? t.toolCalls : [];
+  const errCount = calls.filter(c => c && c.isError).length;
+  const iters = Number(t.iterations) || 0;
+  const u = t.usage || { promptTokens: 0, completionTokens: 0, cachedPromptTokens: 0 };
+
+  const head = [
+    calls.length ? calls.length + ' tool call' + (calls.length === 1 ? '' : 's') : 'no tool calls',
+    iters + ' round-trip' + (iters === 1 ? '' : 's'),
+    biqSecs(t.elapsedMs),
+    esc(t.engine || '?'),
+  ].join(' · ');
+  const badges = (t.engineFallback ? '<span class="biq-tr-badge biq-tr-warn">fallback</span>' : '')
+    + (errCount ? '<span class="biq-tr-badge biq-tr-bad">' + errCount + ' error' + (errCount === 1 ? '' : 's') + '</span>' : '');
+
+  const row = (k: string, v: string) => '<div class="biq-tr-k">' + k + '</div><div class="biq-tr-v">' + v + '</div>';
+  const grid = '<div class="biq-tr-grid">'
+    + row('Engine', esc(t.engine || '') + (t.engineFallback ? ' (native engine failed, legacy loop answered)' : ''))
+    + row('Provider / model', esc((t.provider || '?') + ' / ' + (t.model || '?')))
+    + row('Round-trips', String(iters))
+    + row('Tokens', biqNum(u.promptTokens) + ' in · ' + biqNum(u.completionTokens) + ' out · ' + biqNum(u.cachedPromptTokens) + ' cached')
+    + row('Elapsed', biqSecs(t.elapsedMs))
+    + row('Scope', esc(t.scope || '') + (t.clientId ? ' · client ' + esc(t.clientId) : '') + (t.programId ? ' · program ' + esc(t.programId) : ''))
+    + (t.baiError ? row('Native engine error', '<span class="biq-tr-errtext">' + esc(t.baiError) + '</span>') : '')
+    + '</div>';
+
+  let callsHtml: string;
+  if (!calls.length) {
+    callsHtml = '<p class="biq-tr-none">No tools were called for this answer.</p>';
+  } else {
+    callsHtml = calls.map((c, i) => {
+      const dur = typeof c.durationMs === 'number' ? ' · ' + biqSecs(c.durationMs) : '';
+      const err = c.isError ? ' <span class="biq-tr-badge biq-tr-bad">error</span>' : '';
+      return '<details class="biq-tr-call' + (c.isError ? ' is-err' : '') + '">'
+        + '<summary><span class="biq-tr-idx">' + (i + 1) + '.</span> <code>' + esc(c.name || '?') + '</code>' + dur + err + '</summary>'
+        + '<div class="biq-tr-lbl">Arguments</div>' + biqPre(biqJson(c.args))
+        + '<div class="biq-tr-lbl">Result returned to the model</div>' + biqPre(biqJson(c.result))
+        + '</details>';
+    }).join('');
+  }
+
+  const hist = Array.isArray(t.history) ? t.history : [];
+  const histHtml = hist.length
+    ? hist.map(h => '<div class="biq-tr-turn"><span class="biq-tr-role">' + esc(h.role) + '</span>' + biqPre(String(h.content == null ? '' : h.content)) + '</div>').join('')
+    : '<p class="biq-tr-none">No earlier turns were sent (first question of the conversation).</p>';
+
+  return '<details class="biq-trace">'
+    + '<summary><span class="biq-tr-title">Under the hood</span><span class="biq-tr-meta">' + head + '</span>' + badges + '</summary>'
+    + '<div class="biq-tr-body">'
+      + grid
+      + '<div class="biq-tr-sec">Tool calls, in order</div>' + callsHtml
+      + '<details class="biq-tr-block"><summary>Question sent</summary>' + biqPre(t.question || '') + '</details>'
+      + '<details class="biq-tr-block"><summary>System prompt</summary>' + biqPre(t.systemPrompt || '') + '</details>'
+      + '<details class="biq-tr-block"><summary>History sent (' + hist.length + ')</summary>' + histHtml + '</details>'
+    + '</div>'
+  + '</details>';
 }
 
 function biqRender(): void {
@@ -257,6 +349,7 @@ async function biqSend(): Promise<void> {
     BIQ_MSGS.push({
       role: 'assistant',
       content: (data && data.assistantMessage) ? data.assistantMessage : '(No answer was returned.)',
+      trace: (data && data.trace && typeof data.trace === 'object') ? data.trace as BiqTrace : undefined,
     });
   } catch (e: any) {
     BIQ_MSGS.push({ role: 'assistant', content: (e && e.message) ? e.message : String(e), error: true });
